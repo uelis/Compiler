@@ -1,0 +1,305 @@
+/*
+-- A Compiler for MiniJava:
+-- Parser
+-- Practical on compiler design, LMU 2005/6
+-- Based on Appels book on "Modern Compiler Implementation"
+---------------------------------------------------------------------------
+*/
+
+package minijava.parser;
+
+import minijava.syntax.*;
+import java.util.List;
+import java.util.ArrayList;
+import java.util.Collections;
+
+/* Preliminaries to set up and use the scanner.  */
+
+
+parser code {:
+
+ @Override
+ public void syntax_error(java_cup.runtime.Symbol token) {
+   String opName;
+   switch (token.sym) {
+     case ParserSymbols.NUMBER:
+         opName = "NUMBER("+((Integer)token.value).toString()+")";
+         break;
+     case ParserSymbols.IDENTIFIER:
+         opName = "ID("+((String)token.value)+")";
+         break;
+     default:
+         // TODO: this is just a number, not the name of the constant...
+         opName = Integer.toString(token.sym);
+   }
+   System.out.println("Syntax error at token " + opName +
+           ": line: " + Integer.toString(token.left+1) +
+           " column: " + Integer.toString(token.right+1));
+ }
+:}
+
+
+/* Terminals (tokens returned by the scanner). */
+terminal LBRACE;
+terminal RBRACE;
+terminal LBRACK;
+terminal RBRACK;
+terminal LPAR;
+terminal RPAR;
+terminal INT;
+terminal BOOL;
+terminal IF;
+terminal ELSE;
+terminal WHILE;
+terminal WRITE;
+terminal READ;
+terminal PRINTLN;
+terminal RETURN;
+terminal OPCAND;
+terminal OPCLT;
+terminal OPCPLUS;
+terminal OPCMINUS;
+terminal OPCTIMES;
+terminal OPCDIV;
+terminal STATIC;
+terminal VOID;
+terminal MAIN;
+terminal THROWS;
+terminal IOEXCEPTION;
+terminal KSTRING;
+terminal LEN;
+terminal NEW;
+terminal KTRUE;
+terminal KFALSE;
+terminal THIS;
+terminal PUBLIC;
+terminal CLASS;
+terminal EXTENDS;
+terminal EQUALS;
+terminal DOT;
+terminal COMMA;
+terminal SEMICOL;
+terminal EXCL;
+terminal String IDENTIFIER;
+terminal Integer NUMBER;
+
+/* Non terminals */
+non terminal Program Program;
+non terminal MainClassDeclaration MClass;
+non terminal ClassDeclaration CDecl;
+non terminal ArrayList<ClassDeclaration> CDeclList;
+non terminal String MaybeExtends;
+non terminal VariableDeclaration VDecl;
+non terminal ArrayList<VariableDeclaration> VDeclList;
+non terminal Parameter Param;
+non terminal List<Parameter> ParamList;
+non terminal List<Parameter> ParamList1;
+non terminal MethodDeclaration MDecl;
+non terminal Boolean ThrowsDecl;
+non terminal ArrayList<MethodDeclaration> MDeclList;
+non terminal Type Type;
+non terminal Stm Stm;
+non terminal List<Stm> StmList;
+non terminal List<Stm> StmList1;
+non terminal Exp Expr;
+non terminal List<Exp> ExprList;
+non terminal List<Exp> ExprList1;
+non terminal Exp InfixExpr;
+
+/* Precedences */
+precedence left EQUALS;
+precedence left OPCAND;
+precedence left OPCLT;
+precedence left EXCL;
+precedence left OPCPLUS, OPCMINUS;
+precedence left OPCTIMES, OPCDIV;
+precedence left LBRACK;
+precedence left DOT;
+
+/* The grammar */
+
+Program ::=
+  MClass:c1 CDeclList:cs
+    {: RESULT = new Program(c1,cs); :}
+  ;
+
+MClass ::=
+    CLASS IDENTIFIER:i1 LBRACE PUBLIC STATIC VOID MAIN LPAR KSTRING
+      LBRACK RBRACK IDENTIFIER:i2 RPAR ThrowsDecl:throwsIOException
+      LBRACE Stm:s RBRACE RBRACE
+    {: RESULT = new MainClassDeclaration(i1, i2, throwsIOException, s); :}
+  ;
+
+CDecl ::=
+    CLASS IDENTIFIER:id MaybeExtends:id0 LBRACE VDeclList:ds MDeclList:ms RBRACE
+    {: RESULT = new ClassDeclaration(id, id0, ds, ms); :}
+  ;
+
+CDeclList ::=
+    /* empty */
+    {: RESULT = new ArrayList<>(); :}
+  | CDeclList:cs CDecl:name
+    {: cs.add(name); RESULT = cs; :}
+  ;
+
+MaybeExtends ::=
+    EXTENDS IDENTIFIER:id
+      {: RESULT = id; :}
+  | /* empty */
+      {: RESULT = null; :}
+  ;
+
+VDecl ::=
+    Type:returnType IDENTIFIER:id SEMICOL
+      {: RESULT = new VariableDeclaration(returnType, id); :}
+  ;
+
+VDeclList ::=
+    /* empty */
+      {: RESULT = new ArrayList<>() ; :}
+  | VDeclList:ds VDecl:d
+      {:  ds.add(d); RESULT = ds; :}
+  ;
+
+Param ::=
+    Type:returnType IDENTIFIER:id
+      {: RESULT = new Parameter(id, returnType); :}
+  ;
+
+ParamList ::=
+    /* empty */
+      {: RESULT = new ArrayList<>(); :}
+  | ParamList1:ps
+      {: RESULT = ps; :}
+  ;
+
+ParamList1 ::=
+    Param:p
+      {: RESULT = new ArrayList<>(); RESULT.add(p); :}
+  | ParamList1:ps COMMA  Param:p
+      {: ps.add(p); RESULT = ps; :}
+  ;
+
+MDecl ::=
+    PUBLIC Type:returnType IDENTIFIER:id LPAR ParamList:ps RPAR ThrowsDecl:t
+      LBRACE VDeclList:ds StmList:ss RETURN Expr:exp SEMICOL RBRACE
+      {: RESULT = new MethodDeclaration(returnType, t, id, ps, ds, new StmSeq(ss), exp); :}
+  ;
+
+ThrowsDecl ::=
+    /* empty */
+      {: RESULT = false; :}
+  | THROWS IOEXCEPTION
+      {: RESULT = true; :}
+  ;
+
+MDeclList ::=
+    /* empty */
+      {: RESULT = new ArrayList<>(); :}
+  | MDeclList:ds MDecl:d
+      {: ds.add(d); RESULT = ds; :}
+  ;
+
+Type ::=
+    INT LBRACK RBRACK
+      {: RESULT = new TypeArray(new TypeInt()) ; :}
+  | BOOL
+      {: RESULT = new TypeBoolean(); :}
+  | INT
+      {: RESULT = new TypeInt(); :}
+  | IDENTIFIER:id
+      {: RESULT = new TypeClass(id) ; :}
+  ;
+
+Stm ::=
+    LBRACE StmList:ss RBRACE
+      {: RESULT = new StmSeq(ss); :}
+  | IF LPAR Expr:exp RPAR Stm:sT ELSE Stm:sE
+      {: RESULT = new StmIf(exp, sT, sE); :}
+  | WHILE LPAR Expr:exp RPAR Stm:s
+      {: RESULT = new StmWhile(exp, s); :}
+  | PRINTLN LPAR Expr:exp RPAR SEMICOL
+      {: RESULT = new StmPrintln(exp); :}
+  | WRITE LPAR Expr:exp RPAR SEMICOL
+      {: RESULT = new StmWrite(exp); :}
+  | IDENTIFIER:id EQUALS Expr:exp SEMICOL
+      {: RESULT = new StmAssign(id, exp); :}
+  | IDENTIFIER:id LBRACK Expr:e1 RBRACK EQUALS Expr:e2 SEMICOL
+      {: RESULT = new StmArrayAssign(id, e1, e2); :}
+ ;
+
+StmList ::=
+     /* empty */
+       {: RESULT = new ArrayList<Stm>(); :}
+  | StmList1:ss
+       {: RESULT = ss; :}
+  ;
+
+StmList1 ::=
+    Stm:s
+       {: RESULT = new ArrayList<Stm>(); RESULT.add(s); :}
+  | StmList1:ss Stm:s
+       {: ss.add(s); RESULT = ss; :}
+  ;
+
+Expr ::=
+    InfixExpr:exp
+      {: RESULT = exp; :}
+  | Expr:e1 LBRACK Expr:e2 RBRACK
+      {: RESULT = new ExpArrayGet(e1, e2); :}
+  | Expr:exp DOT LEN
+      {: RESULT = new ExpArrayLength(exp); :}
+  | Expr:exp DOT IDENTIFIER:id LPAR ExprList:es RPAR
+      {: RESULT = new ExpInvoke(exp, id, es); :}
+  | READ LPAR RPAR
+      {: RESULT = new ExpRead(); :}
+  | NUMBER:n
+      {: RESULT = new ExpIntConst(n); :}
+  | OPCMINUS NUMBER:n
+      {: RESULT = new ExpIntConst(-n); :}
+  | KTRUE
+      {: RESULT = new ExpTrue(); :}
+  | KFALSE
+      {: RESULT = new ExpFalse(); :}
+  | IDENTIFIER:id
+      {: RESULT = new ExpId(id); :}
+  | THIS
+      {: RESULT = new ExpThis(); :}
+  | NEW INT LBRACK Expr:exp RBRACK
+      {: RESULT = new ExpNewIntArray(exp); :}
+  | NEW IDENTIFIER:id LPAR RPAR
+      {: RESULT = new ExpNew(id); :}
+  | EXCL Expr:exp
+      {: RESULT = new ExpNeg(exp); :}
+  | LPAR Expr:exp RPAR
+      {: RESULT = exp; :}
+  ;
+
+ExprList ::=
+    /* empty */
+      {: RESULT = new ArrayList<Exp>(); :}
+  | ExprList1:es
+      {: RESULT = es; :}
+  ;
+
+ExprList1 ::=
+    Expr:exp
+      {: RESULT = new ArrayList<Exp>(); RESULT.add(exp); :}
+  | ExprList1:es COMMA Expr:exp
+      {: es.add(exp); RESULT = es; :}
+  ;
+
+InfixExpr ::=
+    Expr:e1 OPCAND Expr:e2
+      {: RESULT = new ExpBinOp(e1, ExpBinOp.Op.AND, e2); :}
+  | Expr:e1 OPCLT Expr:e2
+      {: RESULT = new ExpBinOp(e1, ExpBinOp.Op.LT, e2); :}
+  | Expr:e1 OPCPLUS Expr:e2
+      {: RESULT = new ExpBinOp(e1, ExpBinOp.Op.PLUS, e2); :}
+  | Expr:e1 OPCMINUS Expr:e2
+      {: RESULT = new ExpBinOp(e1, ExpBinOp.Op.MINUS, e2); :}
+  | Expr:e1 OPCTIMES Expr:e2
+      {: RESULT = new ExpBinOp(e1, ExpBinOp.Op.TIMES, e2); :}
+  | Expr:e1 OPCDIV Expr:e2
+      {: RESULT = new ExpBinOp(e1, ExpBinOp.Op.DIV, e2); :}
+;

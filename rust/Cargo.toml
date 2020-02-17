@@ -1,0 +1,13 @@
+[package]
+name = "mjc"
+version = "0.0.1"
+build = "build.rs" # LALRPOP preprocessing
+
+[build-dependencies]
+lalrpop = "0.16.2"
+
+[dependencies]
+lalrpop-util = "0.16.2"
+unicode-xid = "0.1.0"
+term = "0.5.1"
+hashbrown = "0.1"

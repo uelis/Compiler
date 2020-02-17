@@ -1,0 +1,70 @@
+plugins {
+    id 'org.xbib.gradle.plugin.jflex' version '1.1.0'
+    id 'com.github.johnrengelman.shadow' version '5.0.0'
+    id 'application'
+}
+
+repositories {
+    jcenter()
+}
+
+dependencies {
+    compile files('lib/java-cup-11a.jar')
+    testImplementation 'org.junit.jupiter:junit-jupiter-api:5.4.0'
+    testImplementation 'commons-io:commons-io:2.6'
+    testRuntime("org.junit.jupiter:junit-jupiter-engine:5.4.0")
+}
+
+sourceSets {
+    main {
+        java {
+            srcDirs += ["${buildDir}/generated-src/jflex/",
+                        "${buildDir}/generated-src/cup/"]
+        }
+    }
+}
+
+task parser {
+    inputs.file("src/main/cup/minijava/parser/Parser.cup")
+    outputs.file("${buildDir}/generated-src/cup/minijava/parser/Parser.java")
+    outputs.file("${buildDir}/generated-src/cup/minijava/parser/ParserSymbols.java")
+    doFirst { mkdir "${buildDir}/generated-src/cup/minijava/parser/" }
+    doLast {
+        javaexec {
+            main = '-jar'
+            workingDir = 'src/main/java'
+            args = [
+                    file('lib/java-cup-11a.jar'),
+                    '-symbols', 'ParserSymbols',
+                    '-parser', 'Parser',
+                    '-destdir', "${buildDir}/generated-src/cup/minijava/parser/",
+                    file('src/main/cup/minijava/parser/Parser.cup')
+            ]
+        }
+    }
+}
+
+jar {
+    manifest {
+        attributes = [
+                'Main-Class': 'minijava.Main'
+        ]
+    }
+}
+compileJava.dependsOn parser
+
+
+mainClassName = 'minijava.Main'
+jar.enabled = false
+shadowJar {
+    baseName = 'mjc'
+    classifier = null
+    version = null
+}
+build.dependsOn shadowJar
+
+
+test {
+    useJUnitPlatform()
+}
+

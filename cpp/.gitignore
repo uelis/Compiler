@@ -1,0 +1,7 @@
+build
+Tests
+*.config
+*.creator
+*.files
+*.includes
+*.user

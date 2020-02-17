@@ -1,0 +1,198 @@
+use std::cell::Cell;
+use minijava::lexer::{Tok, Error};
+use minijava::ast::*;
+
+grammar<'input>(text: &'input str);
+
+Comma<T>: Vec<T> = {
+  () => { vec!() },
+  <v:(<T> ",")*> <e:T> => {
+   let mut w = v;
+   w.push(e);
+   w
+  }
+};
+
+pub Prg : Prg<'input> = {
+  <m: MainClass> <classes: ClassDecl*> =>
+  Prg { main_class: m.0, main_throws_ioexception: m.1, main_body: m.2, classes: classes}
+};
+
+// TODO: check that argument type is string
+MainClass : (&'input str, bool, Stm<'input>) = {
+  "class" <c: Identifier> "{"
+  "public" "static" "void" "main" "(" Identifier "[" "]" <arg: Identifier> ")"
+  <main_throws: MaybeThrows>
+  "{" <body: Stm> "}"
+  "}" => (c, main_throws, body)
+};
+
+ClassDecl : ClassDecl<'input> = {
+  "class" <name: Identifier> MaybeExtends "{" <vs: VarDecl*> <ms: MethodDecl*> "}"
+  => ClassDecl { name: name, fields: vs, methods: ms }
+};
+
+Extends = {
+  "extends" Identifier
+};
+MaybeExtends = Extends?;
+
+Throws = {
+  "throws" "java.io.IOException"
+};
+MaybeThrows : bool = {
+  <t: Throws?> => match t {
+    None => false,
+    Some(_) => true
+  }
+};
+
+VarDecl : (&'input str, Type<'input>) = {
+  <ty: Type> <v:Identifier> ";" => (v, ty)
+};
+
+Param : (&'input str, Type<'input>) = {
+  <ty: Type> <v: Identifier> => (v, ty)
+};
+
+MethodDecl : MethodDecl<'input> = {
+  "public" <t: Type> <id: Identifier> "(" <ps: Comma<Param>> ")"
+  <throws: MaybeThrows>
+  "{"
+  <ds: VarDecl*>
+  <body: Stm*>
+  "return" <e: Exp> ";"
+  "}" => MethodDecl {
+    name: id,
+    ret_type: t,
+    parameters: ps,
+    throws_ioexception: throws,
+    locals: ds,
+    body: Stm::Seq(body),
+    ret: e
+  }
+};
+
+Type : Type<'input> = {
+   "bool" => Type::Bool,
+   "int" => Type::Int,
+   "int" "[" "]" => Type::Arr(Box::new(Type::Int)),
+   <c: Identifier> => Type::Class(c),
+};
+
+Tier<Op, SubTier>: Exp<'input> = {
+    <e1: Tier<Op, SubTier>> <o: Op> <e2: SubTier> =>
+    Exp::Op(Box::new(e1), o, Box::new(e2)),
+    SubTier
+};
+
+Stm : Stm<'input> = {
+  "{" <s: Stm*> "}" => Stm::Seq(s),
+  "if" "(" <e: Exp> ")" <s1: Stm> "else" <s2: Stm> => Stm::If(Box::new(e), Box::new(s1), Box::new(s2)),
+  "while" "(" <e: Exp> ")" <s: Stm> => Stm::While(Box::new(e), Box::new(s)),
+  "System.out.write" "(" <e: Exp> ")" ";" => Stm::Write(Box::new(e)),
+  "System.out.println" "(" <e: Exp> ")" ";" => Stm::Println(Box::new(e)),
+   <x: Identifier> "=" <e: Exp> ";" => Stm::Assignment(x, Box::new(e)),
+   <x: Identifier> "[" <i: Exp> "]" "=" <e: Exp> ";" => Stm::ArrayAssignment(x, Box::new(i), Box::new(e)),
+};
+
+Exp = Tier<Op3, Exp9>;
+Exp9 = Tier<Op9, Exp11>;
+Exp11 = Tier<Op11, Exp12>;
+Exp12 = Tier<Op12, Exp13>;
+
+Op3: Binop = {
+    "&&" => Binop::StrictAnd,
+};
+
+Op9: Binop = {
+    "<" => Binop::Lt,
+};
+
+Op11: Binop = {
+    "+" => Binop::Add,
+    "-" => Binop::Sub,
+};
+
+Op12: Binop = {
+    "*" => Binop::Mul,
+    "/" => Binop::Div,
+};
+
+Exp13 : Exp<'input> = {
+  "!" <e: Exp13> => Exp::Neg(Box::new(e)),
+  Exp15
+};
+
+Exp15 : Exp<'input> = {
+  <e1: Exp15> "[" <e2: Exp> "]" => Exp::ArrayGet(Box::new(e1), Box::new(e2)),
+  <e1: Exp15> "." "length" => Exp::ArrayLength(Box::new(e1)),
+  <e1: Exp15> "." <i: Identifier> "(" <args: Comma<Exp>> ")" => Exp::Invoke(Cell::new(None), Box::new(e1), i, args),
+  Num => Exp::Number(<>),
+  "true" => Exp::True,
+  "false" => Exp::False,
+  Identifier => Exp::Id(<>),
+  "this" => Exp::This,
+  "new" "int" "[" <e: Exp> "]" => Exp::NewIntArray(Box::new(e)),
+  "new" <i: Identifier> "(" ")" => Exp::New(i),
+  "System.in.read" "(" ")" => Exp::Read(),
+  "(" <e: Exp> ")" => e,
+};
+
+Identifier: &'input str = "Id";
+
+Num: i32 = "Num";
+
+
+extern {
+    type Location = usize;
+    type Error = Error;
+    enum Tok<'input> {
+        "public" => Tok::Public,
+        "static" => Tok::Static,
+        "main" => Tok::Main,
+        "class" => Tok::Class,
+        "extends" => Tok::Extends,
+        "if" => Tok::If,
+        "else" => Tok::Else,
+        "while" => Tok::While,
+        "return" => Tok::Return,
+        "length" => Tok::Length,
+        "true" => Tok::True,
+        "false" => Tok::False,
+        "this" => Tok::This,
+        "new" => Tok::New,
+        "throws" => Tok::Throws,
+        "java.io.IOException" => Tok::IOException,
+
+        "void" => Tok::Void,
+        "bool" => Tok::Bool,
+        "char" => Tok::Char,
+        "int" => Tok::Int,
+        "System.out.println" => Tok::Println,
+        "System.out.write" => Tok::Write,
+        "System.in.read" => Tok::Read,
+
+        "!" => Tok::Bang,
+        "&&" => Tok::DoubleAmpersand,
+        "," => Tok::Comma,
+        ";" => Tok::Semicolon,
+        "." => Tok::Dot,
+        "=" => Tok::Equals,
+        "<"=> Tok::Lt,
+        "("=> Tok::LeftParen,
+        ")" => Tok::RightParen,
+        "{" => Tok::LeftBrace,
+        "}" => Tok::RightBrace,
+        "[" => Tok::LeftBracket,
+        "]" => Tok::RightBracket,
+        "+" => Tok::Plus,
+        "-" => Tok::Minus,
+        "*" => Tok::Star,
+        "/" => Tok::Slash,
+
+        "StringLit" => Tok::String(<&'input str>),
+        "Id" => Tok::Id(<&'input str>),
+        "Num" => Tok::Num(<i32>),
+    }
+}
